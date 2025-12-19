@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+
 import 'package:provider/provider.dart';
 import '../../providers/workout_session_provider.dart';
 import '../../providers/workout_provider.dart';
@@ -26,6 +27,7 @@ class _LiveWorkoutScreenState extends State<LiveWorkoutScreen> {
   Timer? _restTicker; // Ticker to update UI during rest
   int _confirmationCountdown = 15;
   double _pendingWeight = 0.0;
+  double _initialSuggestedWeight = 0.0;
 
   @override
   void initState() {
@@ -139,6 +141,7 @@ class _LiveWorkoutScreenState extends State<LiveWorkoutScreen> {
     }
 
     _pendingWeight = suggestedWeight;
+    _initialSuggestedWeight = suggestedWeight;
 
     // Add Set
     await sessionProvider.addSet(reps, suggestedWeight);
@@ -193,7 +196,7 @@ class _LiveWorkoutScreenState extends State<LiveWorkoutScreen> {
 
   void _startRestTicker() {
     _restTicker?.cancel();
-    _restTicker = Timer.periodic(const Duration(seconds: 1), (timer) {
+    _restTicker = Timer.periodic(const Duration(milliseconds: 30), (timer) {
       if (mounted) setState(() {});
     });
   }
@@ -224,28 +227,37 @@ class _LiveWorkoutScreenState extends State<LiveWorkoutScreen> {
     });
   }
 
-  void _manualConfirm() {
-    _confirmationTimer?.cancel();
-    setState(() {
-      _showWeightConfirmation = false;
-    });
-  }
-
-  void _changeWeight() async {
+  void _manualConfirm() async {
     _confirmationTimer?.cancel();
 
-    double? newWeight = await showDialog<double>(
-      context: context,
-      builder: (_) => _WeightInputDialog(initialValue: _pendingWeight),
-    );
-
-    if (newWeight != null && newWeight != _pendingWeight) {
-      // TODO: Update set weight in provider
+    // Update the set if weight changed
+    if (_pendingWeight != _initialSuggestedWeight) {
+      final sessionProvider = Provider.of<WorkoutSessionProvider>(
+        context,
+        listen: false,
+      );
+      await sessionProvider.updateLastSetWeight(_pendingWeight);
     }
 
     setState(() {
       _showWeightConfirmation = false;
     });
+  }
+
+  void _incrementWeight() {
+    _confirmationTimer?.cancel(); // Pause timer on interaction
+    setState(() {
+      _pendingWeight += 0.5;
+    });
+  }
+
+  void _decrementWeight() {
+    _confirmationTimer?.cancel();
+    if (_pendingWeight > 0) {
+      setState(() {
+        _pendingWeight -= 0.5;
+      });
+    }
   }
 
   @override
@@ -405,13 +417,25 @@ class _LiveWorkoutScreenState extends State<LiveWorkoutScreen> {
                     ),
                     const SizedBox(height: 8),
                     // Timer
-                    Text(
-                      "${DateTime.now().difference(sessionProvider.restStartTime ?? DateTime.now()).inSeconds}s",
-                      style: const TextStyle(
-                        fontSize: 64,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+                    () {
+                      final diff = DateTime.now().difference(
+                        sessionProvider.restStartTime ?? DateTime.now(),
+                      );
+                      final seconds = diff.inSeconds;
+                      final centis =
+                          (diff.inMilliseconds % 1000) ~/
+                          10; // Get first 2 digits of ms
+                      return Text(
+                        "$seconds.${centis.toString().padLeft(2, '0')}s",
+                        style: const TextStyle(
+                          fontSize: 64,
+                          fontWeight: FontWeight.bold,
+                          fontFeatures: [
+                            FontFeature.tabularFigures(),
+                          ], // Keeps width stable
+                        ),
+                      );
+                    }(),
 
                     const SizedBox(height: 32),
 
@@ -434,36 +458,67 @@ class _LiveWorkoutScreenState extends State<LiveWorkoutScreen> {
                             ),
                             const SizedBox(height: 16),
                             Text(
-                              "Carico usato: ${_pendingWeight}kg?",
-                              style: const TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
+                              "Carico usato:",
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.grey[400],
                               ),
                             ),
-                            const SizedBox(height: 24),
+                            const SizedBox(height: 8),
                             Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Expanded(
-                                  child: TextButton(
-                                    onPressed: _changeWeight,
-                                    child: const Text("Cambia"),
+                                IconButton.filledTonal(
+                                  onPressed: _decrementWeight,
+                                  icon: const Icon(Icons.remove),
+                                  style: IconButton.styleFrom(
+                                    padding: const EdgeInsets.all(16),
                                   ),
                                 ),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  child: ElevatedButton(
-                                    onPressed: _manualConfirm,
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.green,
-                                      foregroundColor: Colors.white,
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 16,
-                                      ),
-                                    ),
-                                    child: const Text("CONFERMA"),
+                                const SizedBox(width: 24),
+                                Text(
+                                  "${_pendingWeight}kg",
+                                  style: const TextStyle(
+                                    fontSize: 32,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(width: 24),
+                                IconButton.filledTonal(
+                                  onPressed: _incrementWeight,
+                                  icon: const Icon(Icons.add),
+                                  style: IconButton.styleFrom(
+                                    padding: const EdgeInsets.all(16),
                                   ),
                                 ),
                               ],
+                            ),
+                            if (_initialSuggestedWeight != _pendingWeight)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 8.0),
+                                child: Text(
+                                  "(Suggerito: $_initialSuggestedWeight kg)",
+                                  style: const TextStyle(
+                                    color: Colors.grey,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+
+                            const SizedBox(height: 24),
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton(
+                                onPressed: _manualConfirm,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.green,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 16,
+                                  ),
+                                ),
+                                child: const Text("CONFERMA"),
+                              ),
                             ),
                           ],
                         ),
@@ -531,48 +586,5 @@ class _LiveWorkoutScreenState extends State<LiveWorkoutScreen> {
     if (confirmed == true && mounted) {
       Navigator.of(context).pop(); // Back to Home
     }
-  }
-}
-
-class _WeightInputDialog extends StatefulWidget {
-  final double initialValue;
-  const _WeightInputDialog({required this.initialValue});
-
-  @override
-  State<_WeightInputDialog> createState() => _WeightInputDialogState();
-}
-
-class _WeightInputDialogState extends State<_WeightInputDialog> {
-  late TextEditingController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = TextEditingController(text: widget.initialValue.toString());
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text("Modifica Peso"),
-      content: TextField(
-        controller: _controller,
-        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-        autofocus: true,
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text("Annulla"),
-        ),
-        TextButton(
-          onPressed: () {
-            final val = double.tryParse(_controller.text);
-            Navigator.pop(context, val);
-          },
-          child: const Text("OK"),
-        ),
-      ],
-    );
   }
 }

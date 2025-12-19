@@ -30,24 +30,21 @@ class _WorkoutKeypadState extends State<WorkoutKeypad> {
   Widget build(BuildContext context) {
     final currentPageItems = _pages[_pageIndex];
 
-    return AspectRatio(
-      aspectRatio: 1.2, // Square-ish area
-      child: GridView.builder(
-        physics: const NeverScrollableScrollPhysics(),
-        itemCount: currentPageItems.length,
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 4, // 4x2 grid as requested? User said 3x3 or 4x2.
-          // Let's go with 4 columns for 8 items.
-          childAspectRatio: 1.0,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-        ),
-        itemBuilder: (context, index) {
-          final item = currentPageItems[index];
-
-          return _buildButton(item);
-        },
+    return GridView.builder(
+      physics: const NeverScrollableScrollPhysics(),
+      shrinkWrap: true,
+      itemCount: currentPageItems.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 4,
+        childAspectRatio: 2,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
       ),
+      itemBuilder: (context, index) {
+        final item = currentPageItems[index];
+
+        return _buildButton(item);
+      },
     );
   }
 

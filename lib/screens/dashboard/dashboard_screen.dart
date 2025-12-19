@@ -1,17 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/workout_provider.dart';
-import '../../core/constants/strings.dart';
-import 'widgets/next_session_card.dart';
 import 'widgets/stat_card.dart';
 
 class DashboardScreen extends StatelessWidget {
-  const DashboardScreen({super.key});
+  final VoidCallback onGoToWorkout;
+
+  const DashboardScreen({super.key, required this.onGoToWorkout});
 
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<WorkoutProvider>(context);
-    final nextRoutine = provider.nextRoutine;
     final feed = provider.smartFeed;
 
     return Scaffold(
@@ -20,32 +19,55 @@ class DashboardScreen extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         children: [
           const Text(
-            AppStrings.nextUp,
+            "Pronto per allenarti?",
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 12),
-          if (nextRoutine != null)
-            NextSessionCard(routine: nextRoutine)
-          else
-            const Card(
-              child: Padding(
-                padding: EdgeInsets.all(16.0),
-                child: Text("Crea la tua prima scheda per iniziare!"),
+          Card(
+            color: Theme.of(context).primaryColor,
+            child: InkWell(
+              onTap: onGoToWorkout,
+              child: const Padding(
+                padding: EdgeInsets.all(24.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.fitness_center, color: Colors.white, size: 32),
+                    SizedBox(width: 16),
+                    Text(
+                      "VAI ALL'ALLENAMENTO",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
+          ),
 
-          const SizedBox(height: 24),
+          const SizedBox(height: 32),
           const Text(
             'I tuoi progressi',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 12),
-          ...feed.map(
-            (msg) => Padding(
-              padding: const EdgeInsets.only(bottom: 8.0),
-              child: StatCard(message: msg),
+          if (feed.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(8.0),
+              child: Text(
+                "Completa il tuo primo allenamento per vedere le statistiche!",
+              ),
+            )
+          else
+            ...feed.map(
+              (msg) => Padding(
+                padding: const EdgeInsets.only(bottom: 8.0),
+                child: StatCard(message: msg),
+              ),
             ),
-          ),
         ],
       ),
     );

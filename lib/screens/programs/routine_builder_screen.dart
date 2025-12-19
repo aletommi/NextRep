@@ -365,108 +365,28 @@ class _RoutineBuilderScreenState extends State<RoutineBuilderScreen> {
     final db = Provider.of<DatabaseService>(context, listen: false);
     final exercise = db.exercisesBox.get(routineExercise.exerciseId);
 
-    // Helper to update specific item in the specific block
-    void updateExercise(RoutineExercise newEx) {
-      if (blockId != null) {
-        _wizardData[blockId]![innerIndex] = newEx;
-      } else {
-        _legacyExercises[innerIndex] = newEx;
-      }
-      // No setState needed during text editing if we want to avoid rebuilds,
-      // but model must be updated. For simplicity, we don't setState on every char.
-    }
-
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      child: Padding(
-        padding: const EdgeInsets.all(8.0),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    exercise?.name ?? "Sconosciuto",
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.delete, size: 20, color: Colors.red),
-                  onPressed: () {
-                    setState(() {
-                      if (blockId != null) {
-                        _wizardData[blockId]!.removeAt(innerIndex);
-                      } else {
-                        _legacyExercises.removeAt(innerIndex);
-                      }
-                    });
-                  },
-                ),
-              ],
-            ),
-            Row(
-              children: [
-                Expanded(
-                  child: TextFormField(
-                    initialValue: routineExercise.sets,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Serie',
-                      isDense: true,
-                    ),
-                    onChanged: (v) => updateExercise(
-                      RoutineExercise(
-                        exerciseId: routineExercise.exerciseId,
-                        sets: v,
-                        reps: routineExercise.reps,
-                        weight: routineExercise.weight,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TextFormField(
-                    initialValue: routineExercise.reps,
-                    keyboardType: TextInputType.text,
-                    decoration: const InputDecoration(
-                      labelText: 'Reps',
-                      isDense: true,
-                    ),
-                    onChanged: (v) => updateExercise(
-                      RoutineExercise(
-                        exerciseId: routineExercise.exerciseId,
-                        sets: routineExercise.sets,
-                        reps: v,
-                        weight: routineExercise.weight,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TextFormField(
-                    initialValue: routineExercise.weight,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Kg',
-                      isDense: true,
-                    ),
-                    onChanged: (v) => updateExercise(
-                      RoutineExercise(
-                        exerciseId: routineExercise.exerciseId,
-                        sets: routineExercise.sets,
-                        reps: routineExercise.reps,
-                        weight: v,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
+    return ExerciseConfigCard(
+      routineExercise: routineExercise,
+      exerciseName: exercise?.name ?? "Sconosciuto",
+      onDelete: () {
+        setState(() {
+          if (blockId != null) {
+            _wizardData[blockId]!.removeAt(innerIndex);
+          } else {
+            _legacyExercises.removeAt(innerIndex);
+          }
+        });
+      },
+      onUpdate: (newEx) {
+        // Update the model in memory.
+        // Note: We don't necessarily need setState for text field updates inside the card,
+        // but we do need to update our _wizardData/_legacyExercises source of truth.
+        if (blockId != null) {
+          _wizardData[blockId]![innerIndex] = newEx;
+        } else {
+          _legacyExercises[innerIndex] = newEx;
+        }
+      },
     );
   }
 
@@ -512,4 +432,350 @@ class _RoutineBuilderScreenState extends State<RoutineBuilderScreen> {
   }
 
   // Override build with Wizard logic
+}
+
+class ExerciseConfigCard extends StatefulWidget {
+  final RoutineExercise routineExercise;
+  final String exerciseName;
+  final VoidCallback onDelete;
+  final ValueChanged<RoutineExercise> onUpdate;
+
+  const ExerciseConfigCard({
+    super.key,
+    required this.routineExercise,
+    required this.exerciseName,
+    required this.onDelete,
+    required this.onUpdate,
+  });
+
+  @override
+  State<ExerciseConfigCard> createState() => _ExerciseConfigCardState();
+}
+
+class _ExerciseConfigCardState extends State<ExerciseConfigCard> {
+  late bool _isModular;
+  late int _setsCount;
+
+  // Controllers for Constant mode
+  final _constantSetsCtrl = TextEditingController();
+  final _constantRepsCtrl = TextEditingController();
+  final _constantWeightCtrl = TextEditingController();
+
+  // Controllers for Modular mode
+  // List of maps {reps: Ctrl, weight: Ctrl}
+  final List<Map<String, TextEditingController>> _modularCtrls = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _initValues();
+  }
+
+  void _initValues() {
+    final ex = widget.routineExercise;
+    // Heuristic: if reps or weight contain comma, it's modular.
+    final hasComma =
+        (ex.reps.contains(',') || (ex.weight?.contains(',') ?? false));
+    _isModular = hasComma;
+
+    // Try parsing sets
+    _setsCount = int.tryParse(ex.sets) ?? 3;
+
+    if (!_isModular) {
+      _constantSetsCtrl.text = ex.sets;
+      _constantRepsCtrl.text = ex.reps;
+      _constantWeightCtrl.text = ex.weight ?? "";
+    } else {
+      _initModularControllers();
+    }
+  }
+
+  void _initModularControllers() {
+    _modularCtrls.clear();
+    final repsParts = widget.routineExercise.reps.split(',');
+    final weightParts = (widget.routineExercise.weight ?? "").split(',');
+
+    for (int i = 0; i < _setsCount; i++) {
+      String r = "";
+      String w = "";
+      if (i < repsParts.length) {
+        r = repsParts[i].trim();
+      } else if (repsParts.isNotEmpty) {
+        r = repsParts.last.trim(); // fallback
+      }
+
+      if (i < weightParts.length) {
+        w = weightParts[i].trim();
+      } else if (weightParts.isNotEmpty) {
+        w = weightParts.last.trim();
+      }
+
+      _modularCtrls.add({
+        'reps': TextEditingController(text: r),
+        'weight': TextEditingController(text: w),
+      });
+    }
+  }
+
+  void _updateParent() {
+    String finalSets;
+    String finalReps;
+    String? finalWeight;
+
+    if (!_isModular) {
+      finalSets = _constantSetsCtrl.text;
+      finalReps = _constantRepsCtrl.text;
+      finalWeight = _constantWeightCtrl.text;
+    } else {
+      finalSets = _setsCount.toString();
+      finalReps = _modularCtrls
+          .map((m) => m['reps']?.text.trim() ?? "0")
+          .join(',');
+      finalWeight = _modularCtrls
+          .map((m) => m['weight']?.text.trim() ?? "0")
+          .join(',');
+    }
+
+    widget.onUpdate(
+      RoutineExercise(
+        exerciseId: widget.routineExercise.exerciseId,
+        sets: finalSets,
+        reps: finalReps,
+        weight: finalWeight,
+      ),
+    );
+  }
+
+  void _toggleMode(bool? value) {
+    if (value == null) return;
+    setState(() {
+      _isModular = value;
+      // Sync values when switching?
+      // Simple approach: Re-init controllers from current model if possible,
+      // or just clear depending on UX.
+      // Let's try to preserve:
+      if (_isModular) {
+        // Switch Constant -> Modular
+        // Use the constant values to fill all modular rows
+        _setsCount = int.tryParse(_constantSetsCtrl.text) ?? 3;
+        _modularCtrls.clear();
+        for (int i = 0; i < _setsCount; i++) {
+          _modularCtrls.add({
+            'reps': TextEditingController(text: _constantRepsCtrl.text),
+            'weight': TextEditingController(text: _constantWeightCtrl.text),
+          });
+        }
+        _updateParent(); // save modular format
+      } else {
+        // Switch Modular -> Constant
+        // Take the first row? or average?
+        // Let's take the first row.
+        if (_modularCtrls.isNotEmpty) {
+          _constantSetsCtrl.text = _setsCount.toString();
+          _constantRepsCtrl.text = _modularCtrls[0]['reps']?.text ?? "";
+          _constantWeightCtrl.text = _modularCtrls[0]['weight']?.text ?? "";
+        }
+        _updateParent(); // save constant format
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      child: Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: Column(
+          children: [
+            // HEADER
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    widget.exerciseName,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete, size: 20, color: Colors.red),
+                  onPressed: widget.onDelete,
+                ),
+              ],
+            ),
+            // MODE TOGGLE
+            Row(
+              children: [
+                const Text(
+                  "Modalità: ",
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                DropdownButton<bool>(
+                  value: _isModular,
+                  isDense: true,
+                  underline: Container(),
+                  items: const [
+                    DropdownMenuItem(
+                      value: false,
+                      child: Text(
+                        "Carico Costante",
+                        style: TextStyle(fontSize: 13),
+                      ),
+                    ),
+                    DropdownMenuItem(
+                      value: true,
+                      child: Text(
+                        "Serie Modulari",
+                        style: TextStyle(fontSize: 13),
+                      ),
+                    ),
+                  ],
+                  onChanged: _toggleMode,
+                ),
+              ],
+            ),
+            const Divider(),
+
+            if (!_isModular) _buildConstantForm() else _buildModularForm(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildConstantForm() {
+    return Row(
+      children: [
+        Expanded(
+          child: TextFormField(
+            controller: _constantSetsCtrl,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: 'Serie',
+              isDense: true,
+            ),
+            onChanged: (v) => _updateParent(),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: TextFormField(
+            controller: _constantRepsCtrl,
+            keyboardType: TextInputType.text, // Text allows range "8-12"
+            decoration: const InputDecoration(labelText: 'Reps', isDense: true),
+            onChanged: (v) => _updateParent(),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: TextFormField(
+            controller: _constantWeightCtrl,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(labelText: 'Kg', isDense: true),
+            onChanged: (v) => _updateParent(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildModularForm() {
+    return Column(
+      children: [
+        // Set Count Selector
+        Row(
+          children: [
+            const Text("Numero di Serie: "),
+            IconButton(
+              icon: const Icon(Icons.remove_circle_outline),
+              onPressed: () {
+                if (_setsCount > 1) {
+                  setState(() {
+                    _setsCount--;
+                    _modularCtrls.removeLast();
+                    _updateParent();
+                  });
+                }
+              },
+            ),
+            Text(
+              "$_setsCount",
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            IconButton(
+              icon: const Icon(Icons.add_circle_outline),
+              onPressed: () {
+                if (_setsCount < 20) {
+                  setState(() {
+                    _setsCount++;
+                    // Add new row by copying the last one logic
+                    String lastReps = "";
+                    String lastWeight = "";
+                    if (_modularCtrls.isNotEmpty) {
+                      lastReps = _modularCtrls.last['reps']?.text ?? "";
+                      lastWeight = _modularCtrls.last['weight']?.text ?? "";
+                    }
+                    _modularCtrls.add({
+                      'reps': TextEditingController(text: lastReps),
+                      'weight': TextEditingController(text: lastWeight),
+                    });
+                    _updateParent();
+                  });
+                }
+              },
+            ),
+          ],
+        ),
+        // Rows
+        ...List.generate(_setsCount, (index) {
+          final ctrlMap = _modularCtrls[index];
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2.0),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 30,
+                  child: Text(
+                    "${index + 1}°",
+                    style: const TextStyle(color: Colors.grey),
+                  ),
+                ),
+                Expanded(
+                  child: TextFormField(
+                    controller: ctrlMap['reps'],
+                    keyboardType: TextInputType.text,
+                    decoration: const InputDecoration(
+                      labelText: 'Reps',
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 8,
+                      ),
+                      isDense: true,
+                    ),
+                    onChanged: (v) => _updateParent(),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextFormField(
+                    controller: ctrlMap['weight'],
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Kg',
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 8,
+                      ),
+                      isDense: true,
+                    ),
+                    onChanged: (v) => _updateParent(),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }),
+      ],
+    );
+  }
 }

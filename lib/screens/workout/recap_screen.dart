@@ -1,19 +1,61 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 
-class RecapScreen extends StatelessWidget {
+class RecapScreen extends StatefulWidget {
   final String exerciseName;
-  final VoidCallback onNext;
+  final void Function(BuildContext) onNext;
+  final Map<String, dynamic> stats;
+  final int restSeconds;
 
   const RecapScreen({
     super.key,
     required this.exerciseName,
     required this.onNext,
+    required this.stats,
+    this.restSeconds = 90, // Default rest if not passed
   });
+
+  @override
+  State<RecapScreen> createState() => _RecapScreenState();
+}
+
+class _RecapScreenState extends State<RecapScreen> {
+  late Timer _timer;
+  int _secondsLeft = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _secondsLeft = widget.restSeconds;
+    _startTimer();
+  }
+
+  void _startTimer() {
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted) {
+        setState(() {
+          if (_secondsLeft > 0) {
+            _secondsLeft--;
+          } else {
+            _timer.cancel();
+            _timer.cancel();
+            widget.onNext(context); // Auto navigate
+          }
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black, // High contrast
+      backgroundColor: Colors.black,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(24.0),
@@ -28,15 +70,41 @@ class RecapScreen extends StatelessWidget {
               ),
               const SizedBox(height: 24),
               Text(
-                "Hai completato\n$exerciseName!",
+                "Hai completato\n${widget.exerciseName}!",
                 textAlign: TextAlign.center,
                 style: const TextStyle(
-                  fontSize: 28,
+                  fontSize: 24,
                   fontWeight: FontWeight.bold,
                   color: Colors.white,
                 ),
               ),
-              const SizedBox(height: 48),
+              const SizedBox(height: 16),
+              // Rest Timer Display
+              Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 12,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[900],
+                    borderRadius: BorderRadius.circular(30),
+                    border: Border.all(
+                      color: _secondsLeft < 10 ? Colors.red : Colors.green,
+                    ),
+                  ),
+                  child: Text(
+                    "Recupero: ${_secondsLeft}s",
+                    style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 32),
 
               // Stats Card
               Container(
@@ -49,17 +117,17 @@ class RecapScreen extends StatelessWidget {
                 child: Column(
                   children: [
                     _buildStatRow(
-                      Icons.trending_up,
-                      "Miglioramento",
-                      "+2.5kg",
-                      Colors.green,
+                      Icons.fitness_center,
+                      "Carico (${widget.stats['weightLabel']})",
+                      widget.stats['weightDiff'] ?? "-",
+                      Colors.blue,
                     ),
                     const Divider(color: Colors.grey, height: 32),
                     _buildStatRow(
-                      Icons.timer,
-                      "Tempo sotto tensione",
-                      "4 min",
-                      Colors.blue,
+                      Icons.repeat,
+                      "Ripetizioni (${widget.stats['repsLabel']})",
+                      widget.stats['repsDiff'] ?? "-",
+                      Colors.orange,
                     ),
                   ],
                 ),
@@ -68,7 +136,11 @@ class RecapScreen extends StatelessWidget {
               const Spacer(),
 
               ElevatedButton(
-                onPressed: onNext,
+                onPressed: () {
+                  _timer.cancel();
+                  _timer.cancel();
+                  widget.onNext(context);
+                },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Theme.of(context).primaryColor,
                   foregroundColor: Colors.black,

@@ -13,12 +13,10 @@ class WorkoutSessionProvider extends ChangeNotifier {
   CompletedExercise? get activeExercise => _activeExercise;
 
   // Timer logic
-  // DateTime? _timerStartTime; // Unused
-  int _elapsedSeconds = 0;
-  bool _isTimerRunning = false; // logic for rest timer
+  // DateTime? _timerStartTime; // Moved to bottom with restStartTime
+  // int _elapsedSeconds = 0; // Removed unused field
 
-  int get elapsedSeconds => _elapsedSeconds;
-  bool get isTimerRunning => _isTimerRunning;
+  // int get elapsedSeconds => _elapsedSeconds; // Removed unused getter
 
   WorkoutSessionProvider(this._databaseService);
 
@@ -166,17 +164,93 @@ class WorkoutSessionProvider extends ChangeNotifier {
     return null; // No history
   }
 
+  // Comparison Logic for Recap
+  Future<Map<String, dynamic>> getExerciseStats(String exerciseName) async {
+    // Current completed exercise
+    final currentEx = _activeSession?.exercises
+        .where((e) => e.exerciseName == exerciseName)
+        .lastOrNull;
+    if (currentEx == null) return {};
+
+    // Last session exercise
+    final lastSession = await _databaseService.isar.workoutSessions
+        .filter()
+        .idLessThan(_activeSession!.id) // Exclude current session
+        .exercisesElement((q) => q.exerciseNameEqualTo(exerciseName))
+        .sortByDateDesc()
+        .findFirst();
+
+    if (lastSession == null) {
+      return {
+        'weightDiff': 'N/A',
+        'repsDiff': 'N/A',
+        'weightLabel': 'Prima volta',
+        'repsLabel': 'Prima volta',
+      };
+    }
+
+    final oldEx = lastSession.exercises
+        .where((e) => e.exerciseName == exerciseName)
+        .firstOrNull;
+
+    if (oldEx == null) {
+      return {
+        'weightDiff': 'N/A',
+        'repsDiff': 'N/A',
+        'weightLabel': 'Nessun dato',
+        'repsLabel': 'Nessun dato',
+      };
+    }
+
+    // Compare LAST used weight and Total Reps
+    final currentLastWeight = currentEx.sets.isEmpty
+        ? 0.0
+        : currentEx.sets.last.weight ?? 0.0;
+
+    final oldLastWeight = oldEx.sets.isEmpty
+        ? 0.0
+        : oldEx.sets.last.weight ?? 0.0;
+
+    final currentTotalReps = currentEx.sets.fold<int>(
+      0,
+      (sum, s) => sum + (s.reps ?? 0),
+    );
+    final oldTotalReps = oldEx.sets.fold<int>(
+      0,
+      (sum, s) => sum + (s.reps ?? 0),
+    );
+
+    String getLabel(num diff) {
+      if (diff > 0) return "In più";
+      if (diff < 0) return "In meno";
+      return "Uguale";
+    }
+
+    return {
+      'weightDiff':
+          '${(currentLastWeight - oldLastWeight).toStringAsFixed(1)}kg',
+      'weightLabel': getLabel(currentLastWeight - oldLastWeight),
+      'repsDiff': '${currentTotalReps - oldTotalReps}',
+      'repsLabel': getLabel(currentTotalReps - oldTotalReps),
+    };
+  }
+
   // Timer Logic
-  // Simple implementation for now, should probably use Ticker or Timer.periodic
-  // Using a simplistic approach to avoid complexity in this file if UI handles visual countdown?
-  // User prompt says "Timer di recupero parte subito".
-  // Let's just store the start time.
+  DateTime? _restStartTime;
+  bool _isTimerRunning = false;
+
+  DateTime? get restStartTime => _restStartTime;
+  bool get isTimerRunning => _isTimerRunning;
+
   void startRestTimer() {
-    // _timerStartTime = DateTime.now();
+    _restStartTime = DateTime.now();
     _isTimerRunning = true;
-    _elapsedSeconds = 0;
     notifyListeners();
-    // A periodic timer would update elapsedSeconds for UI
-    // For now, let UI widgets use a StreamBuilder or Ticker based on _timerStartTime.
+  }
+
+  void stopRestTimer() {
+    _isTimerRunning = false;
+    _restStartTime = null;
+    notifyListeners();
   }
 }

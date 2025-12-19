@@ -268,24 +268,105 @@ class TargetDialog extends StatefulWidget {
 }
 
 class _TargetDialogState extends State<TargetDialog> {
+  // Common for both modes
+  final _restCtrl = TextEditingController();
+  final _notesCtrl = TextEditingController();
+
+  // Mode Toggle
+  bool _isModular = false;
+  int _setsCount = 3;
+
+  // Constant Mode Controllers
   final _setsCtrl = TextEditingController();
   final _repsCtrl = TextEditingController();
   final _weightCtrl = TextEditingController();
-  final _restCtrl = TextEditingController();
-  final _notesCtrl = TextEditingController();
+
+  // Modular Mode Controllers
+  final List<Map<String, TextEditingController>> _modularCtrls = [];
 
   @override
   void initState() {
     super.initState();
+    _initValues();
+  }
+
+  void _initValues() {
+    // Defaults
+    _restCtrl.text = "90";
+
     if (widget.initialData != null) {
-      _setsCtrl.text = widget.initialData!.sets;
-      _repsCtrl.text = widget.initialData!.reps;
-      _weightCtrl.text = widget.initialData!.weight ?? "";
       _restCtrl.text = widget.initialData!.restTimeSeconds?.toString() ?? "90";
       _notesCtrl.text = widget.initialData!.notes ?? "";
+
+      final ex = widget.initialData!;
+      final hasComma =
+          (ex.reps.contains(',') || (ex.weight?.contains(',') ?? false));
+      _isModular = hasComma;
+      _setsCount = int.tryParse(ex.sets) ?? 3;
+
+      if (!_isModular) {
+        _setsCtrl.text = ex.sets;
+        _repsCtrl.text = ex.reps;
+        _weightCtrl.text = ex.weight ?? "";
+      } else {
+        _initModularControllers(ex.reps, ex.weight);
+      }
     } else {
-      _restCtrl.text = "90"; // Def
+      // New exercise default
+      _setsCount = 3;
     }
+  }
+
+  void _initModularControllers(String repsStr, String? weightStr) {
+    _modularCtrls.clear();
+    final repsParts = repsStr.split(',');
+    final weightParts = (weightStr ?? "").split(',');
+
+    for (int i = 0; i < _setsCount; i++) {
+      String r = "";
+      String w = "";
+      if (i < repsParts.length) {
+        r = repsParts[i].trim();
+      } else if (repsParts.isNotEmpty) {
+        r = repsParts.last.trim(); // fallback
+      }
+
+      if (i < weightParts.length) {
+        w = weightParts[i].trim();
+      } else if (weightParts.isNotEmpty) {
+        w = weightParts.last.trim();
+      }
+
+      _modularCtrls.add({
+        'reps': TextEditingController(text: r),
+        'weight': TextEditingController(text: w),
+      });
+    }
+  }
+
+  void _toggleMode(bool? value) {
+    if (value == null) return;
+    setState(() {
+      _isModular = value;
+      if (_isModular) {
+        // Switch Constant -> Modular
+        _setsCount = int.tryParse(_setsCtrl.text) ?? 3;
+        _modularCtrls.clear();
+        for (int i = 0; i < _setsCount; i++) {
+          _modularCtrls.add({
+            'reps': TextEditingController(text: _repsCtrl.text),
+            'weight': TextEditingController(text: _weightCtrl.text),
+          });
+        }
+      } else {
+        // Switch Modular -> Constant
+        if (_modularCtrls.isNotEmpty) {
+          _setsCtrl.text = _setsCount.toString();
+          _repsCtrl.text = _modularCtrls[0]['reps']?.text ?? "";
+          _weightCtrl.text = _modularCtrls[0]['weight']?.text ?? "";
+        }
+      }
+    });
   }
 
   @override
@@ -295,32 +376,49 @@ class _TargetDialogState extends State<TargetDialog> {
       content: SingleChildScrollView(
         child: Column(
           children: [
-            TextField(
-              controller: _setsCtrl,
-              decoration: const InputDecoration(
-                labelText: "Sets",
-                hintText: "es. 4",
-                floatingLabelBehavior: FloatingLabelBehavior.always,
-              ),
-              keyboardType: TextInputType.number,
+            // Mode Selector
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Text(
+                  "Modalità: ",
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                DropdownButton<bool>(
+                  value: _isModular,
+                  isDense: true,
+                  underline: Container(),
+                  items: const [
+                    DropdownMenuItem(
+                      value: false,
+                      child: Text(
+                        "Carico Costante",
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    DropdownMenuItem(
+                      value: true,
+                      child: Text(
+                        "Serie Modulari",
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                  onChanged: _toggleMode,
+                ),
+              ],
             ),
-            TextField(
-              controller: _repsCtrl,
-              decoration: const InputDecoration(
-                labelText: "Reps",
-                hintText: "es. 8-10",
-                floatingLabelBehavior: FloatingLabelBehavior.always,
-              ),
-              keyboardType: TextInputType.text,
-            ), // 8-10 allowed
-            TextField(
-              controller: _weightCtrl,
-              decoration: const InputDecoration(
-                labelText: "Carico (Kg) - Opzionale",
-                floatingLabelBehavior: FloatingLabelBehavior.always,
-              ),
-              keyboardType: TextInputType.number,
-            ),
+            const Divider(),
+
+            if (!_isModular) _buildConstantForm() else _buildModularForm(),
+
+            const SizedBox(height: 16),
             TextField(
               controller: _restCtrl,
               decoration: const InputDecoration(
@@ -345,22 +443,184 @@ class _TargetDialogState extends State<TargetDialog> {
           onPressed: () => Navigator.pop(context),
           child: const Text("Annulla"),
         ),
-        ElevatedButton(
-          onPressed: () {
-            if (_setsCtrl.text.isNotEmpty && _repsCtrl.text.isNotEmpty) {
-              widget.onSave(
-                _setsCtrl.text,
-                _repsCtrl.text,
-                _weightCtrl.text.isEmpty ? null : _weightCtrl.text,
-                int.tryParse(_restCtrl.text) ?? 90,
-                _notesCtrl.text.isEmpty ? null : _notesCtrl.text,
-              );
-              Navigator.pop(context);
-            }
-          },
-          child: const Text("Salva"),
+        ElevatedButton(onPressed: _onSave, child: const Text("Salva")),
+      ],
+    );
+  }
+
+  Widget _buildConstantForm() {
+    return Column(
+      children: [
+        TextField(
+          controller: _setsCtrl,
+          decoration: const InputDecoration(
+            labelText: "Sets",
+            hintText: "es. 4",
+            floatingLabelBehavior: FloatingLabelBehavior.always,
+          ),
+          keyboardType: TextInputType.number,
+        ),
+        TextField(
+          controller: _repsCtrl,
+          decoration: const InputDecoration(
+            labelText: "Reps",
+            hintText: "es. 8-10",
+            floatingLabelBehavior: FloatingLabelBehavior.always,
+          ),
+          keyboardType: TextInputType.text,
+        ),
+        TextField(
+          controller: _weightCtrl,
+          decoration: const InputDecoration(
+            labelText: "Carico (Kg) - Opzionale",
+            floatingLabelBehavior: FloatingLabelBehavior.always,
+          ),
+          keyboardType: TextInputType.number,
         ),
       ],
     );
+  }
+
+  Widget _buildModularForm() {
+    return Column(
+      children: [
+        // Set Count Selector
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text("Numero di Serie: "),
+            Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.remove_circle_outline),
+                  onPressed: () {
+                    if (_setsCount > 1) {
+                      setState(() {
+                        _setsCount--;
+                        _modularCtrls.removeLast();
+                      });
+                    }
+                  },
+                ),
+                Text(
+                  "$_setsCount",
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.add_circle_outline),
+                  onPressed: () {
+                    if (_setsCount < 20) {
+                      setState(() {
+                        _setsCount++;
+                        // Add new row by copying the last one logic
+                        String lastReps = "";
+                        String lastWeight = "";
+                        if (_modularCtrls.isNotEmpty) {
+                          lastReps = _modularCtrls.last['reps']?.text ?? "";
+                          lastWeight = _modularCtrls.last['weight']?.text ?? "";
+                        }
+                        _modularCtrls.add({
+                          'reps': TextEditingController(text: lastReps),
+                          'weight': TextEditingController(text: lastWeight),
+                        });
+                      });
+                    }
+                  },
+                ),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        // Rows
+        // Limit height or scrollable? Parent is SingleChildScrollView.
+        ...List.generate(_setsCount, (index) {
+          final ctrlMap = _modularCtrls[index];
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4.0),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 25,
+                  child: Text(
+                    "${index + 1}°",
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: TextField(
+                    controller: ctrlMap['reps'],
+                    keyboardType: TextInputType.text,
+                    decoration: const InputDecoration(
+                      labelText: 'Reps',
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 8,
+                      ),
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: ctrlMap['weight'],
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Kg',
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 8,
+                      ),
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
+  void _onSave() {
+    String finalSets;
+    String finalReps;
+    String? finalWeight;
+
+    if (!_isModular) {
+      if (_setsCtrl.text.isEmpty || _repsCtrl.text.isEmpty) {
+        return; // Basic validation
+      }
+      finalSets = _setsCtrl.text;
+      finalReps = _repsCtrl.text;
+      finalWeight = _weightCtrl.text.isEmpty ? null : _weightCtrl.text;
+    } else {
+      finalSets = _setsCount.toString();
+      finalReps = _modularCtrls
+          .map((m) => m['reps']?.text.trim() ?? "0")
+          .join(',');
+      finalWeight = _modularCtrls
+          .map((m) => m['weight']?.text.trim() ?? "0")
+          .join(',');
+    }
+
+    widget.onSave(
+      finalSets,
+      finalReps,
+      finalWeight,
+      int.tryParse(_restCtrl.text) ?? 90,
+      _notesCtrl.text.isEmpty ? null : _notesCtrl.text,
+    );
+    Navigator.pop(context);
   }
 }

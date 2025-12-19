@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../core/constants/strings.dart';
 import 'dashboard/dashboard_screen.dart';
 import 'programs/programs_screen.dart';
-// import 'workout/workout_screen.dart';
+import 'workout/workout_preview_screen.dart';
 import 'analysis/analysis_screen.dart';
 
 class MainScaffold extends StatefulWidget {
@@ -16,19 +16,17 @@ class _MainScaffoldState extends State<MainScaffold> {
   int _currentIndex = 0;
 
   // Tabs will be integrated here
-  final List<Widget> _screens = [
-    const DashboardScreen(),
-    const ProgramsScreen(),
-    const Center(
-      child: Text(AppStrings.workout),
-    ), // This might be a modal or separate screen
-    const AnalysisScreen(),
-  ];
-
   @override
   Widget build(BuildContext context) {
+    final List<Widget> screens = [
+      DashboardScreen(onGoToWorkout: () => setState(() => _currentIndex = 2)),
+      const ProgramsScreen(),
+      const WorkoutPreviewScreen(),
+      const AnalysisScreen(),
+    ];
+
     return Scaffold(
-      body: IndexedStack(index: _currentIndex, children: _screens),
+      body: IndexedStack(index: _currentIndex, children: screens),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
         onDestinationSelected: (index) {

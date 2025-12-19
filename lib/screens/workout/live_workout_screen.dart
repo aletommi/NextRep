@@ -9,7 +9,8 @@ import 'widgets/workout_keypad.dart';
 import 'recap_screen.dart';
 
 class LiveWorkoutScreen extends StatefulWidget {
-  const LiveWorkoutScreen({super.key});
+  final int initialIndex;
+  const LiveWorkoutScreen({super.key, this.initialIndex = 0});
 
   @override
   State<LiveWorkoutScreen> createState() => _LiveWorkoutScreenState();
@@ -22,12 +23,14 @@ class _LiveWorkoutScreenState extends State<LiveWorkoutScreen> {
   // Weight Confirmation State
   bool _showWeightConfirmation = false;
   Timer? _confirmationTimer; // The 15s auto-confirm timer
+  Timer? _restTicker; // Ticker to update UI during rest
   int _confirmationCountdown = 15;
   double _pendingWeight = 0.0;
 
   @override
   void initState() {
     super.initState();
+    _currentExerciseIndex = widget.initialIndex;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initRoutine();
     });
@@ -90,6 +93,21 @@ class _LiveWorkoutScreenState extends State<LiveWorkoutScreen> {
     });
   }
 
+  // Parses comma-separated values (e.g. "10,8,6") and returns the one for the current set index.
+  // Falls back to the last value if index exceeds list, or the original string if no commas.
+  String _getTargetValue(String? source, int setIndex) {
+    if (source == null || source.isEmpty) return "0";
+    if (!source.contains(',')) return source;
+
+    final parts = source.split(',').map((e) => e.trim()).toList();
+    if (parts.isEmpty) return "0";
+
+    if (setIndex < parts.length) {
+      return parts[setIndex];
+    }
+    return parts.last; // Fallback to last specified target
+  }
+
   // --- Logic Flow ---
 
   void _onRepSelected(int reps) async {
@@ -103,12 +121,22 @@ class _LiveWorkoutScreenState extends State<LiveWorkoutScreen> {
     final currentSetIndex = sessionProvider.activeExercise?.sets.length ?? 0;
 
     // Get suggestion
-    double suggestedWeight =
-        await sessionProvider.getSuggestedWeight(
-          sessionProvider.activeExercise?.exerciseName ?? "",
-          currentSetIndex,
-        ) ??
-        50.0;
+    double suggestedWeight;
+    final targetWeightStr = _getTargetValue(
+      currentRoutineEx.weight,
+      currentSetIndex,
+    );
+
+    if (targetWeightStr != '0' && targetWeightStr.isNotEmpty) {
+      suggestedWeight = double.tryParse(targetWeightStr) ?? 50.0;
+    } else {
+      suggestedWeight =
+          await sessionProvider.getSuggestedWeight(
+            sessionProvider.activeExercise?.exerciseName ?? "",
+            currentSetIndex,
+          ) ??
+          50.0;
+    }
 
     _pendingWeight = suggestedWeight;
 
@@ -123,36 +151,33 @@ class _LiveWorkoutScreenState extends State<LiveWorkoutScreen> {
       if (mounted) {
         // Start Timer visually in background or overlay?
         // Prompt says: "Start timer... Instead of input screen, show Recap".
-        sessionProvider.startRestTimer(); // Ensure timer starts
+        sessionProvider.startRestTimer(); // Ensure timer starts in background
+
+        // Fetch comparison stats
+        final stats = await sessionProvider.getExerciseStats(
+          _getExerciseName(currentRoutineEx),
+        );
+
+        if (!mounted) return;
 
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(
             builder: (_) => RecapScreen(
               exerciseName: _getExerciseName(currentRoutineEx),
-              onNext: () {
+              stats: stats,
+              restSeconds: currentRoutineEx.restTimeSeconds ?? 90,
+              onNext: (ctx) {
                 if (_currentExerciseIndex + 1 <
                     _activeRoutine!.exercises.length) {
-                  Navigator.of(context).pushReplacement(
+                  Navigator.of(ctx).pushReplacement(
                     MaterialPageRoute(
-                      builder: (_) => const LiveWorkoutScreen(),
+                      builder: (_) => LiveWorkoutScreen(
+                        initialIndex: _currentExerciseIndex + 1,
+                      ),
                     ),
                   );
-                  // Note: We need to pass the state that we want to start from index+1.
-                  // But LiveWorkoutScreen inits from session active exercise?
-                  // No, it inits from 0.
-                  // We need to advance the index stored in logic or pass it.
-                  // WorkoutSession persists 'CompletedExercise' list.
-                  // We could check `session.exercises.length` to determine where we are.
-                  // But let's just make `LiveWorkoutScreen` accept an initial index or better yet:
-                  // Just rely on `activeSession.exercises.length`?
-                  // No, simply: The `RecapScreen` was pushed. We can just create a fresh `LiveWorkoutScreen`.
-                  // But `_initRoutine` defaults to 0.
-
-                  // IMPROVEMENT: `LiveWorkoutScreen` should check how many exercises are already logged in `activeSession`
-                  // and match them to Routine to find current index.
-                  // Doing this in `_initRoutine` would solve restoration too.
                 } else {
-                  Navigator.of(context).pop(); // Exit to Home
+                  Navigator.of(ctx).pop(); // Exit to Home
                 }
               },
             ),
@@ -160,9 +185,17 @@ class _LiveWorkoutScreenState extends State<LiveWorkoutScreen> {
         );
       }
     } else {
-      // Normal confirmation flow
+      // Normal confirmation flow + Rest Timer UI
       _startConfirmationFlow();
+      _startRestTicker();
     }
+  }
+
+  void _startRestTicker() {
+    _restTicker?.cancel();
+    _restTicker = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted) setState(() {});
+    });
   }
 
   void _startConfirmationFlow() {
@@ -218,6 +251,7 @@ class _LiveWorkoutScreenState extends State<LiveWorkoutScreen> {
   @override
   void dispose() {
     _confirmationTimer?.cancel();
+    _restTicker?.cancel(); // Cancel rest ticker
     super.dispose();
   }
 
@@ -250,11 +284,21 @@ class _LiveWorkoutScreenState extends State<LiveWorkoutScreen> {
                   padding: const EdgeInsets.all(16.0),
                   child: Column(
                     children: [
-                      Text(
-                        "GRUPPO MUSCOLARE",
-                        style: Theme.of(
-                          context,
-                        ).textTheme.bodySmall?.copyWith(color: Colors.grey),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const SizedBox(width: 48), // Spacer for balance
+                          Text(
+                            "GRUPPO MUSCOLARE",
+                            style: Theme.of(
+                              context,
+                            ).textTheme.bodySmall?.copyWith(color: Colors.grey),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close, color: Colors.grey),
+                            onPressed: _finishWorkout,
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 4),
                       Text(
@@ -274,9 +318,32 @@ class _LiveWorkoutScreenState extends State<LiveWorkoutScreen> {
                           color: Theme.of(context).cardColor,
                           borderRadius: BorderRadius.circular(20),
                         ),
-                        child: Text(
-                          "Serie ${sessionProvider.activeExercise?.sets.length ?? 0 + 1} di ${currentEx.sets} | Target: ${currentEx.reps} reps",
-                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        child: Builder(
+                          builder: (context) {
+                            final currentSetIndex =
+                                sessionProvider.activeExercise?.sets.length ??
+                                0;
+                            final targetReps = _getTargetValue(
+                              currentEx.reps,
+                              currentSetIndex,
+                            );
+                            final targetWeight = _getTargetValue(
+                              currentEx.weight,
+                              currentSetIndex,
+                            );
+
+                            final weightText =
+                                (targetWeight != '0' && targetWeight.isNotEmpty)
+                                ? ' | ${targetWeight}kg'
+                                : '';
+
+                            return Text(
+                              "Serie ${currentSetIndex + 1} di ${currentEx.sets} | Target: $targetReps reps$weightText",
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            );
+                          },
                         ),
                       ),
                     ],
@@ -309,8 +376,11 @@ class _LiveWorkoutScreenState extends State<LiveWorkoutScreen> {
                         "Ripetizioni fatte?",
                         style: TextStyle(fontSize: 18, color: Colors.white70),
                       ),
-                      const SizedBox(height: 16),
-                      WorkoutKeypad(onRepSelected: _onRepSelected),
+                      const SizedBox(height: 2),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 32.0),
+                        child: WorkoutKeypad(onRepSelected: _onRepSelected),
+                      ),
                     ],
                   ),
 
@@ -336,7 +406,7 @@ class _LiveWorkoutScreenState extends State<LiveWorkoutScreen> {
                     const SizedBox(height: 8),
                     // Timer
                     Text(
-                      "${DateTime.now().difference(sessionProvider.activeExercise?.sets.last.completedAt ?? DateTime.now()).inSeconds}s",
+                      "${DateTime.now().difference(sessionProvider.restStartTime ?? DateTime.now()).inSeconds}s",
                       style: const TextStyle(
                         fontSize: 64,
                         fontWeight: FontWeight.bold,
@@ -401,16 +471,23 @@ class _LiveWorkoutScreenState extends State<LiveWorkoutScreen> {
                     ] else ...[
                       ElevatedButton(
                         onPressed: () {
-                          // Stop rest logic handled by UI removal?
-                          // Just a visual close here?
-                          // But timer in provider might continue running logic.
-                          // Actually we can just pop LiveWorkoutScreen if we want to leave? NO.
-                          // We just hide overlay? But how?
-                          // We need internal state `_userDismissedRestTimer`.
-                          // For now, assume this screen stays until user acts?
-                          // Actually the user might want to see next set info.
+                          final sessionProvider =
+                              Provider.of<WorkoutSessionProvider>(
+                                context,
+                                listen: false,
+                              );
+                          sessionProvider.stopRestTimer();
+                          _restTicker?.cancel();
                         },
                         child: const Text("TORNA ALLA SERIE"),
+                      ),
+                      const SizedBox(height: 16),
+                      TextButton(
+                        onPressed: _skipRest,
+                        child: const Text(
+                          "SALTA RECUPERO",
+                          style: TextStyle(color: Colors.white70),
+                        ),
                       ),
                     ],
                   ],
@@ -420,6 +497,40 @@ class _LiveWorkoutScreenState extends State<LiveWorkoutScreen> {
         ],
       ),
     );
+  }
+
+  void _skipRest() {
+    final sessionProvider = Provider.of<WorkoutSessionProvider>(
+      context,
+      listen: false,
+    );
+    sessionProvider.stopRestTimer();
+    _restTicker?.cancel();
+  }
+
+  Future<void> _finishWorkout() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Terminare Allenamento?"),
+        content: const Text("Sei sicuro di voler chiudere la sessione?"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text("Annulla"),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text("Termina"),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      Navigator.of(context).pop(); // Back to Home
+    }
   }
 }
 

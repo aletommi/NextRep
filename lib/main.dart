@@ -20,7 +20,6 @@ void main() async {
       providers: [
         Provider<DatabaseService>.value(value: databaseService),
         ChangeNotifierProvider(create: (_) => WorkoutProvider(databaseService)),
-        // Duplicate removed
         ChangeNotifierProvider(create: (_) => ProgramProvider(databaseService)),
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(
@@ -43,7 +42,7 @@ class MyApp extends StatelessWidget {
       home: Consumer<AuthProvider>(
         builder: (context, auth, child) {
           if (!auth.isAuthenticated) {
-            return const RegisterScreen(); // Default to Register as requested
+            return const RegisterScreen();
           }
           return const MainScaffold();
         },

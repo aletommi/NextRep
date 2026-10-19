@@ -14,8 +14,6 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> _init() async {
     // Determine if we need to open the box or if it's opened in main/db service
-    // For simplicity, let's assume we can open it here or it's safe.
-    // Ideally DatabaseService handles all boxes, but Auth might be separate.
     if (!Hive.isBoxOpen(authBoxName)) {
       await Hive.openBox(authBoxName);
     }

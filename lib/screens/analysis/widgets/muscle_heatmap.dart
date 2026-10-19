@@ -10,7 +10,7 @@ class MuscleHeatmap extends StatelessWidget {
     final muscles = [
       {'name': 'Chest', 'score': 10},
       {'name': 'Back', 'score': 8},
-      {'name': 'Legs', 'score': 2}, // Skipped legs day?
+      {'name': 'Legs', 'score': 2},
       {'name': 'Arms', 'score': 6},
     ];
 

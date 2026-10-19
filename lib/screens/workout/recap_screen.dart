@@ -1,18 +1,23 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../../providers/workout_session_provider.dart';
 
+/// Shown after the last set of an exercise: summary vs target plus the rest
+/// countdown before moving to the next exercise.
 class RecapScreen extends StatefulWidget {
   final String exerciseName;
-  final void Function(BuildContext) onNext;
-  final Map<String, dynamic> stats;
+  final ExerciseStats stats;
   final int restSeconds;
+  final bool isLastExercise;
+  final VoidCallback onNext;
 
   const RecapScreen({
     super.key,
     required this.exerciseName,
-    required this.onNext,
     required this.stats,
-    this.restSeconds = 90, // Default rest if not passed
+    required this.restSeconds,
+    required this.isLastExercise,
+    required this.onNext,
   });
 
   @override
@@ -20,40 +25,59 @@ class RecapScreen extends StatefulWidget {
 }
 
 class _RecapScreenState extends State<RecapScreen> {
-  late Timer _timer;
-  int _secondsLeft = 0;
+  Timer? _timer;
+  late int _secondsLeft;
 
   @override
   void initState() {
     super.initState();
     _secondsLeft = widget.restSeconds;
-    _startTimer();
-  }
-
-  void _startTimer() {
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (mounted) {
-        setState(() {
-          if (_secondsLeft > 0) {
-            _secondsLeft--;
-          } else {
-            _timer.cancel();
-            _timer.cancel();
-            widget.onNext(context); // Auto navigate
-          }
-        });
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      if (_secondsLeft <= 1) {
+        _timer?.cancel();
+        setState(() => _secondsLeft = 0);
+        // Rest is over: move on automatically (the last exercise waits for
+        // the user to tap "Termina").
+        if (!widget.isLastExercise) widget.onNext();
+      } else {
+        setState(() => _secondsLeft--);
       }
     });
   }
 
   @override
   void dispose() {
-    _timer.cancel();
+    _timer?.cancel();
     super.dispose();
+  }
+
+  void _next() {
+    _timer?.cancel();
+    widget.onNext();
   }
 
   @override
   Widget build(BuildContext context) {
+    final stats = widget.stats;
+    final change = stats.percentChange;
+
+    String targetLabel;
+    Color targetColor;
+    if (change == null) {
+      targetLabel = 'Nessun carico target nella scheda';
+      targetColor = Colors.grey;
+    } else if (change.abs() < 0.05) {
+      targetLabel = 'Target raggiunto';
+      targetColor = Colors.green;
+    } else if (change > 0) {
+      targetLabel = '+${change.toStringAsFixed(1)}% rispetto al target';
+      targetColor = Colors.green;
+    } else {
+      targetLabel = '${change.toStringAsFixed(1)}% rispetto al target';
+      targetColor = Colors.orange;
+    }
+
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
@@ -70,7 +94,7 @@ class _RecapScreenState extends State<RecapScreen> {
               ),
               const SizedBox(height: 24),
               Text(
-                "Hai completato\n${widget.exerciseName}!",
+                'Hai completato\n${widget.exerciseName}!',
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   fontSize: 24,
@@ -79,34 +103,33 @@ class _RecapScreenState extends State<RecapScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-              // Rest Timer Display
-              Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 12,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[900],
-                    borderRadius: BorderRadius.circular(30),
-                    border: Border.all(
-                      color: _secondsLeft < 10 ? Colors.red : Colors.green,
+              if (!widget.isLastExercise)
+                Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 12,
                     ),
-                  ),
-                  child: Text(
-                    "Recupero: ${_secondsLeft}s",
-                    style: const TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[900],
+                      borderRadius: BorderRadius.circular(30),
+                      border: Border.all(
+                        color: _secondsLeft < 10 ? Colors.red : Colors.green,
+                      ),
+                    ),
+                    child: Text(
+                      _secondsLeft > 0
+                          ? 'Recupero: ${_secondsLeft}s'
+                          : 'Recupero finito!',
+                      style: const TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
                     ),
                   ),
                 ),
-              ),
-
               const SizedBox(height: 32),
-
-              // Stats Card
               Container(
                 padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
@@ -116,41 +139,39 @@ class _RecapScreenState extends State<RecapScreen> {
                 ),
                 child: Column(
                   children: [
-                    _buildStatRow(
-                      Icons.fitness_center,
-                      "Carico (${widget.stats['weightLabel']})",
-                      widget.stats['weightDiff'] ?? "-",
-                      Colors.blue,
+                    _StatRow(
+                      icon: Icons.fitness_center,
+                      label: 'Volume (kg x reps)',
+                      value: stats.volume.toStringAsFixed(0),
+                      color: Colors.blue,
                     ),
                     const Divider(color: Colors.grey, height: 32),
-                    _buildStatRow(
-                      Icons.repeat,
-                      "Ripetizioni (${widget.stats['repsLabel']})",
-                      widget.stats['repsDiff'] ?? "-",
-                      Colors.orange,
+                    _StatRow(
+                      icon: Icons.flag_outlined,
+                      label: stats.targetVolume == null
+                          ? 'Target'
+                          : 'Target ${stats.targetVolume!.toStringAsFixed(0)}',
+                      value: targetLabel,
+                      color: targetColor,
                     ),
                   ],
                 ),
               ),
-
               const Spacer(),
-
               ElevatedButton(
-                onPressed: () {
-                  _timer.cancel();
-                  _timer.cancel();
-                  widget.onNext(context);
-                },
+                onPressed: _next,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Theme.of(context).primaryColor,
-                  foregroundColor: Colors.black,
                   padding: const EdgeInsets.symmetric(vertical: 20),
                   textStyle: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                child: const Text("PROSSIMO ESERCIZIO"),
+                child: Text(
+                  widget.isLastExercise
+                      ? 'TERMINA ALLENAMENTO'
+                      : 'PROSSIMO ESERCIZIO',
+                ),
               ),
             ],
           ),
@@ -158,8 +179,23 @@ class _RecapScreenState extends State<RecapScreen> {
       ),
     );
   }
+}
 
-  Widget _buildStatRow(IconData icon, String label, String value, Color color) {
+class _StatRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color color;
+
+  const _StatRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Row(
       children: [
         Icon(icon, color: color, size: 28),

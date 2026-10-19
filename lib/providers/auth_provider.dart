@@ -1,51 +1,31 @@
 import 'package:flutter/material.dart';
-import 'package:hive/hive.dart';
+import '../services/database_service.dart';
 
+/// Local-only authentication: the app has no backend, so login just
+/// remembers that the user went through the welcome flow.
 class AuthProvider extends ChangeNotifier {
-  static const String authBoxName = 'auth';
+  final DatabaseService _db;
 
-  bool _isAuthenticated = false;
+  bool _isAuthenticated;
+
+  AuthProvider(this._db)
+    : _isAuthenticated = _db.authBox.get(
+        'isAuthenticated',
+        defaultValue: false,
+      );
 
   bool get isAuthenticated => _isAuthenticated;
 
-  AuthProvider() {
-    _init();
-  }
+  Future<void> login(String email, String password) => _setAuthenticated(true);
 
-  Future<void> _init() async {
-    // Determine if we need to open the box or if it's opened in main/db service
-    if (!Hive.isBoxOpen(authBoxName)) {
-      await Hive.openBox(authBoxName);
-    }
-    final box = Hive.box(authBoxName);
-    _isAuthenticated = box.get('isAuthenticated', defaultValue: false);
-    notifyListeners();
-  }
+  Future<void> register(String email, String password) =>
+      _setAuthenticated(true);
 
-  Future<void> login(String email, String password) async {
-    // Mock validation
-    await Future.delayed(const Duration(seconds: 1)); // Simulate visual delay
+  Future<void> logout() => _setAuthenticated(false);
 
-    _isAuthenticated = true;
-    final box = Hive.box(authBoxName);
-    await box.put('isAuthenticated', true);
-    notifyListeners();
-  }
-
-  Future<void> register(String email, String password) async {
-    // Mock registration
-    await Future.delayed(const Duration(seconds: 1));
-
-    _isAuthenticated = true; // Auto login after register
-    final box = Hive.box(authBoxName);
-    await box.put('isAuthenticated', true);
-    notifyListeners();
-  }
-
-  Future<void> logout() async {
-    _isAuthenticated = false;
-    final box = Hive.box(authBoxName);
-    await box.put('isAuthenticated', false);
+  Future<void> _setAuthenticated(bool value) async {
+    _isAuthenticated = value;
+    await _db.authBox.put('isAuthenticated', value);
     notifyListeners();
   }
 }

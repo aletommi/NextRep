@@ -1,32 +1,28 @@
 # NextRep 🏋️
 
-A cross-platform workout tracker built with **Flutter**: create training programs, follow them set by set in the gym and track your progress over time.
+A simple workout tracker built with **Flutter**: create a program with a few routines, follow them set by set in the gym and see your progress over time. Everything is stored on the device.
 
-## Features
+## How it works
 
-- **Training programs**: step-by-step wizard to create programs and routines, with an exercise picker and a routine editor.
-- **Live workout mode**: focused, one-exercise-at-a-time view with a custom numeric keypad to log weight and reps quickly.
-- **Rest timer**: built-in timer between sets; the screen stays awake during the workout.
-- **Workout recap**: summary of the session when you finish.
-- **Dashboard & analysis**: stats cards, progress charts and a per-muscle-group overview.
-- **Offline first**: all data is stored locally on the device, no account or server needed.
-- Dark theme designed for use in the gym.
+1. **Schede**: create a program and a number of routines (A, B, C...). Open a routine to add exercises with sets, reps, optional weight and rest time. Exercises can be reordered (drag) and removed (swipe).
+2. **Allenati**: the app proposes the next routine in rotation (the one after the last you completed). Tap the big button to start. For each set you tap the reps done, confirm the weight, and rest. After the last set of an exercise you get a recap vs the routine target.
+3. **Dashboard / Analisi**: number of workouts, volume per session, sets per muscle group in the last 30 days and the full history.
+
+Login and registration are local only (no server): they just remember that you went through the welcome screen.
 
 ## Tech stack
 
-- **Flutter / Dart**: one codebase for Android, iOS, web and desktop
-- **Provider**: state management
-- **Hive** and **Isar**: local NoSQL databases (with code generation via `build_runner`)
-- **fl_chart**: charts
-- **wakelock_plus**, **google_fonts**
+- **Flutter / Dart**, **Provider** for state
+- **Hive** for programs and the exercise catalogue, **Isar** for workout sessions (code generation via `build_runner`)
+- **fl_chart**, **wakelock_plus** (screen stays on during a workout)
 
 ## Project structure
 
 ```
 lib/
-  core/        theme, colors and strings
-  models/      data models (exercise, workout, set, routine, program, session)
-  providers/   app state (auth, programs, workouts, live session)
+  core/        theme, colors, strings, target parsing helpers
+  models/      exercise, routine, program (Hive) and workout session (Isar)
+  providers/   auth, programs, live workout session + history
   screens/     dashboard, programs, workout, analysis, auth
   services/    local database
 ```
@@ -39,6 +35,4 @@ dart run build_runner build --delete-conflicting-outputs
 flutter run
 ```
 
-## Status
-
-Work in progress. Login and registration are local only, and some analysis widgets still use sample data.
+Tests: `flutter test`.

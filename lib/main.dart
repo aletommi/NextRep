@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 import 'core/theme/app_theme.dart';
 import 'services/database_service.dart';
 import 'screens/main_scaffold.dart';
-import 'providers/workout_provider.dart';
 import 'providers/program_provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/workout_session_provider.dart';
@@ -19,9 +18,8 @@ void main() async {
     MultiProvider(
       providers: [
         Provider<DatabaseService>.value(value: databaseService),
-        ChangeNotifierProvider(create: (_) => WorkoutProvider(databaseService)),
+        ChangeNotifierProvider(create: (_) => AuthProvider(databaseService)),
         ChangeNotifierProvider(create: (_) => ProgramProvider(databaseService)),
-        ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(
           create: (_) => WorkoutSessionProvider(databaseService),
         ),

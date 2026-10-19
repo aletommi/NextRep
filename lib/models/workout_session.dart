@@ -11,10 +11,16 @@ class WorkoutSession {
 
   late String routineName;
 
-  // Link to the original routine ID if needed for analytics, though the user didn't explicitly ask for it,
-  // keeping it simple as per prompt "routineName"
+  /// Id of the routine this session was started from (null for old data).
+  String? routineId;
 
   List<CompletedExercise> exercises = [];
+
+  @ignore
+  int get totalSets => exercises.fold(0, (sum, e) => sum + e.sets.length);
+
+  @ignore
+  double get totalVolume => exercises.fold(0.0, (sum, e) => sum + e.volume);
 }
 
 @embedded
@@ -23,6 +29,10 @@ class CompletedExercise {
   late String muscleGroup;
 
   List<WorkoutSet> sets = [];
+
+  @ignore
+  double get volume =>
+      sets.fold(0.0, (sum, s) => sum + (s.reps ?? 0) * (s.weight ?? 0));
 }
 
 @embedded

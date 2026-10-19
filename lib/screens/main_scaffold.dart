@@ -15,7 +15,6 @@ class MainScaffold extends StatefulWidget {
 class _MainScaffoldState extends State<MainScaffold> {
   int _currentIndex = 0;
 
-  // Tabs will be integrated here
   @override
   Widget build(BuildContext context) {
     final List<Widget> screens = [
@@ -29,15 +28,7 @@ class _MainScaffoldState extends State<MainScaffold> {
       body: IndexedStack(index: _currentIndex, children: screens),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
-        onDestinationSelected: (index) {
-          if (index == 2) {
-            // Handle Workout Start separately perhaps, or just navigate
-            // For now, simple navigation
-          }
-          setState(() {
-            _currentIndex = index;
-          });
-        },
+        onDestinationSelected: (index) => setState(() => _currentIndex = index),
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.dashboard_outlined),

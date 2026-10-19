@@ -1,30 +1,43 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/colors.dart';
+import '../../../models/workout_session.dart';
 
+/// Sets per muscle group in the last 30 days, colored by how much was done.
 class MuscleHeatmap extends StatelessWidget {
-  const MuscleHeatmap({super.key});
+  final List<WorkoutSession> sessions;
+
+  const MuscleHeatmap({super.key, required this.sessions});
 
   @override
   Widget build(BuildContext context) {
-    // Mock Heatmap: Simple list for now as drawing a body is complex without assets
-    final muscles = [
-      {'name': 'Chest', 'score': 10},
-      {'name': 'Back', 'score': 8},
-      {'name': 'Legs', 'score': 2},
-      {'name': 'Arms', 'score': 6},
-    ];
+    final since = DateTime.now().subtract(const Duration(days: 30));
+    final counts = <String, int>{};
+    for (final s in sessions.where((s) => s.date.isAfter(since))) {
+      for (final e in s.exercises) {
+        counts[e.muscleGroup] = (counts[e.muscleGroup] ?? 0) + e.sets.length;
+      }
+    }
+
+    if (counts.isEmpty) {
+      return const Text(
+        'Nessuna serie negli ultimi 30 giorni.',
+        style: TextStyle(color: Colors.grey),
+      );
+    }
+
+    final entries = counts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
 
     return Wrap(
       spacing: 8,
       runSpacing: 8,
-      children: muscles.map((m) {
-        final score = m['score'] as int;
+      children: entries.map((e) {
         Color color = AppColors.muscleGroupHeatmapLow;
-        if (score > 5) color = AppColors.muscleGroupHeatmapMedium;
-        if (score > 8) color = AppColors.muscleGroupHeatmapHigh;
+        if (e.value >= 10) color = AppColors.muscleGroupHeatmapMedium;
+        if (e.value >= 20) color = AppColors.muscleGroupHeatmapHigh;
 
         return Chip(
-          label: Text(m['name'] as String),
+          label: Text('${e.key} · ${e.value}'),
           backgroundColor: color,
           labelStyle: const TextStyle(color: Colors.black),
         );

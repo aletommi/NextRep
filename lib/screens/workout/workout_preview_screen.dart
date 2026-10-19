@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../providers/workout_provider.dart';
-import '../../providers/workout_session_provider.dart';
 import '../../models/routine.dart';
-import 'live_workout_screen.dart'; // We'll create this next
+import '../../providers/program_provider.dart';
+import '../../providers/workout_session_provider.dart';
+import 'live_workout_screen.dart';
 
 class WorkoutPreviewScreen extends StatefulWidget {
   const WorkoutPreviewScreen({super.key});
@@ -13,64 +13,79 @@ class WorkoutPreviewScreen extends StatefulWidget {
 }
 
 class _WorkoutPreviewScreenState extends State<WorkoutPreviewScreen> {
-  Routine? selectedRoutine;
+  /// Routine chosen by the user; null means "use the suggested one".
+  String? _selectedRoutineId;
 
-  @override
-  void initState() {
-    super.initState();
-    // Pre-select the next routine from logic
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final workoutProvider = Provider.of<WorkoutProvider>(
-        context,
-        listen: false,
+  Future<void> _start(Routine routine) async {
+    if (routine.exercises.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Questa routine non ha esercizi. Aggiungili in Schede.',
+          ),
+        ),
       );
-      setState(() {
-        selectedRoutine = workoutProvider.nextRoutine;
-      });
-    });
+      return;
+    }
+
+    final sessions = context.read<WorkoutSessionProvider>();
+    await sessions.startSession(routine);
+
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => LiveWorkoutScreen(routine: routine)),
+    );
+    // Whatever happened in the live screen, make sure the session is closed.
+    await sessions.endSession();
+    if (mounted) setState(() => _selectedRoutineId = null);
   }
 
   @override
   Widget build(BuildContext context) {
-    final workoutProvider = Provider.of<WorkoutProvider>(context);
-    final routines = workoutProvider.routines;
+    final routines = context.watch<ProgramProvider>().activeRoutines;
+    final sessions = context.watch<WorkoutSessionProvider>();
 
-    // Fallback if no routines
     if (routines.isEmpty) {
-      return const Center(
-        child: Text("Nessuna scheda attiva. Crea un programma!"),
+      return Scaffold(
+        appBar: AppBar(title: const Text('Allenamento')),
+        body: const Center(
+          child: Padding(
+            padding: EdgeInsets.all(24.0),
+            child: Text(
+              'Nessuna scheda attiva.\nCreane una nella sezione Schede.',
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
       );
     }
 
+    final suggested = sessions.nextRoutine(routines) ?? routines.first;
+    final selected =
+        routines.where((r) => r.id == _selectedRoutineId).firstOrNull ??
+        suggested;
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Home Allenamento"),
-        centerTitle: false,
+        title: const Text('Allenamento'),
         actions: [
-          // Routine Dropdown
-          DropdownButton<Routine>(
-            value: selectedRoutine != null && routines.contains(selectedRoutine)
-                ? selectedRoutine
-                : routines.first,
+          DropdownButton<String>(
+            value: selected.id,
             dropdownColor: Theme.of(context).cardColor,
             underline: const SizedBox(),
             icon: const Icon(Icons.keyboard_arrow_down),
-            items: routines.map((r) {
-              return DropdownMenuItem(
-                value: r,
-                child: Text(
-                  r.name,
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-              );
-            }).toList(),
-            onChanged: (Routine? newRoutine) {
-              if (newRoutine != null) {
-                setState(() {
-                  selectedRoutine = newRoutine;
-                });
-              }
-            },
+            items: routines
+                .map(
+                  (r) => DropdownMenuItem(
+                    value: r.id,
+                    child: Text(
+                      r.name,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                )
+                .toList(),
+            onChanged: (id) => setState(() => _selectedRoutineId = id),
           ),
           const SizedBox(width: 16),
         ],
@@ -82,33 +97,20 @@ class _WorkoutPreviewScreenState extends State<WorkoutPreviewScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               const Text(
-                "Pronto a spaccare?",
+                'Pronto a spaccare?',
                 style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
               ),
+              const SizedBox(height: 8),
+              Text(
+                '${selected.exercises.length} esercizi',
+                style: const TextStyle(color: Colors.grey),
+              ),
               const SizedBox(height: 48),
-
-              // Big Start Button
               GestureDetector(
-                onTap: () async {
-                  if (selectedRoutine == null) return;
-
-                  final sessionProvider = Provider.of<WorkoutSessionProvider>(
-                    context,
-                    listen: false,
-                  );
-                  await sessionProvider.startSession(selectedRoutine!.name);
-
-                  if (context.mounted) {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const LiveWorkoutScreen(),
-                      ),
-                    );
-                  }
-                },
+                onTap: () => _start(selected),
                 child: Container(
-                  width: 300,
-                  height: 300,
+                  width: 260,
+                  height: 260,
                   decoration: BoxDecoration(
                     color: Theme.of(context).primaryColor,
                     shape: BoxShape.circle,
@@ -123,25 +125,28 @@ class _WorkoutPreviewScreenState extends State<WorkoutPreviewScreen> {
                     ],
                   ),
                   child: Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.play_arrow_rounded,
-                          size: 64,
-                          color: Colors.black,
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          "INIZIA\n${selectedRoutine?.name.toUpperCase() ?? ''}",
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Colors.black,
-                            fontSize: 24,
-                            fontWeight: FontWeight.w900,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.play_arrow_rounded,
+                            size: 64,
+                            color: Colors.white,
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 8),
+                          Text(
+                            'INIZIA\n${selected.name.toUpperCase()}',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
